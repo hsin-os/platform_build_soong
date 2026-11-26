@@ -174,6 +174,10 @@ type prebuiltModuleProperties struct {
 
 // Split relative_install_path to a separate struct, because it is not supported for every
 // modules listed in [etcInstallPathToFactoryMap]
+type prebuiltMultilibProperties struct {
+	Compile_multilib *string
+}
+
 type prebuiltSubdirProperties struct {
 	// If the base file name of the src and dst all match, dsts property does not need to be
 	// set, and only relative_install_path can be set.
@@ -373,6 +377,23 @@ func createPrebuiltEtcModulesInDirectory(ctx android.LoadHookContext, partition,
 			propsList = append(propsList, &etc.PrebuiltDstsProperties{
 				Dsts: dsts,
 			})
+		}
+
+		// prebuilt_renderscript_bitcode (used for the lib and lib64 install dirs) is
+		// multilib "both", so the arm64 variant of a copy of files destined for
+		// lib/ would also be installed to lib64/ and collide with the files copied
+		// to lib64/. Restrict each module to the arch that matches its install dir.
+		if len(ctx.Config().Targets[android.Android]) > 1 {
+			switch etcInstallPathKey {
+			case "lib":
+				propsList = append(propsList, &prebuiltMultilibProperties{
+					Compile_multilib: proptools.StringPtr("32"),
+				})
+			case "lib64":
+				propsList = append(propsList, &prebuiltMultilibProperties{
+					Compile_multilib: proptools.StringPtr("64"),
+				})
+			}
 		}
 
 		ctx.CreateModuleInDirectory(moduleFactory, srcDir, propsList...)
