@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
+	"strconv"
 	"strings"
 	"time"
 
@@ -325,7 +327,36 @@ func parseAvailableEnv() map[string]string {
 	return result
 }
 
+// tuneGC bounds soong_build's peak RSS on small hosts (e.g. 16 GB CI runners).
+//
+// soong_build is started by ninja through `env -i`, so GOGC / GOMEMLIMIT set by
+// the caller never reach it and the Go heap is free to grow to 2x the live set.
+// Set the collector up in-process instead: collect more eagerly and use a soft
+// limit of ~60% of physical RAM. Both are ignored when the caller did set them.
+func tuneGC() {
+	if os.Getenv("GOGC") != "" || os.Getenv("GOMEMLIMIT") != "" {
+		return
+	}
+	data, err := os.ReadFile("/proc/meminfo")
+	if err != nil {
+		return
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && fields[0] == "MemTotal:" {
+			kb, err := strconv.ParseInt(fields[1], 10, 64)
+			if err != nil || kb <= 0 {
+				return
+			}
+			debug.SetGCPercent(40)
+			debug.SetMemoryLimit(kb * 1024 * 6 / 10)
+			return
+		}
+	}
+}
+
 func main() {
+	tuneGC()
 	flag.Parse()
 
 	soongStartTime := time.Now()
