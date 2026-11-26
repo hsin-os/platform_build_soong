@@ -229,7 +229,8 @@ func collectDepsMutator(mctx android.BottomUpMutatorContext) {
 }
 
 type depsStruct struct {
-	Deps []string
+	Deps               []string
+	High_priority_deps []string
 }
 
 type multilibDepsStruct struct {
@@ -336,7 +337,17 @@ func generateDepStruct(deps map[string]*depCandidateProps, highPriorityDeps []st
 		bitness := getBitness(depProps.Arch)
 		fullyQualifiedDepName := fullyQualifiedModuleName(depName, depProps.Namespace)
 		if android.InList(depName, highPriorityDeps) {
-			depsStruct.High_priority_deps = append(depsStruct.High_priority_deps, fullyQualifiedDepName)
+			// Flat high_priority_deps are only collected for the first (primary) target, so
+			// a prebuilt pinned to a single arch (see prebuilt_etc_modules_gen.go) has to be
+			// listed under the matching multilib section to be packaged for that arch.
+			switch depProps.Multilib {
+			case "32":
+				depsStruct.Multilib.Lib32.High_priority_deps = append(depsStruct.Multilib.Lib32.High_priority_deps, fullyQualifiedDepName)
+			case "64":
+				depsStruct.Multilib.Lib64.High_priority_deps = append(depsStruct.Multilib.Lib64.High_priority_deps, fullyQualifiedDepName)
+			default:
+				depsStruct.High_priority_deps = append(depsStruct.High_priority_deps, fullyQualifiedDepName)
+			}
 		} else if android.InList("32", bitness) && android.InList("64", bitness) {
 			// If both 32 and 64 bit variants are enabled for this module
 			switch depProps.Multilib {
@@ -371,6 +382,8 @@ func generateDepStruct(deps map[string]*depCandidateProps, highPriorityDeps []st
 	depsStruct.Multilib.Both.Deps = android.SortedUniqueStrings(depsStruct.Multilib.Both.Deps)
 	depsStruct.Multilib.Common.Deps = android.SortedUniqueStrings(depsStruct.Multilib.Common.Deps)
 	depsStruct.High_priority_deps = android.SortedUniqueStrings(depsStruct.High_priority_deps)
+	depsStruct.Multilib.Lib32.High_priority_deps = android.SortedUniqueStrings(depsStruct.Multilib.Lib32.High_priority_deps)
+	depsStruct.Multilib.Lib64.High_priority_deps = android.SortedUniqueStrings(depsStruct.Multilib.Lib64.High_priority_deps)
 
 	return &depsStruct
 }
